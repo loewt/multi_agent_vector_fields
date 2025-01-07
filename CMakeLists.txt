@@ -1,89 +1,79 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.5)
+
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+    set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+endif()
+
 project(multi_agent_vector_fields)
 
+set(${PROJECT_NAME}_VERSION_MAJOR 0)
+set(${PROJECT_NAME}_VERSION_MINOR 0)
+set(${PROJECT_NAME}_VERSION_PATCH 0)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(${PROJECT_NAME}_VERSION "${${PROJECT_NAME}_VERSION_MAJOR}.${${PROJECT_NAME}_VERSION_MINOR}.${${PROJECT_NAME}_VERSION_PATCH}")
 
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
-find_package(catkin REQUIRED COMPONENTS
-  geometry_msgs
-  message_generation
-  roscpp
-  std_msgs
-  tf2_geometry_msgs
-  tf2_ros
-  visualization_msgs
-  eigen_conversions
-  roslib
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
+set(${PROJECT_NAME}_PREFIX_PACKAGE share/${PROJECT_NAME}/cmake)
+set(${PROJECT_NAME}_PREFIX_INCLUDE include/${PROJECT_NAME})
+
+add_subdirectory(src/${PROJECT_NAME})
+# add_subdirectory(test)
+# add_subdirectory(benchmark)
+# add_subdirectory(docs)
+
+include(CMakePackageConfigHelpers)
+
+configure_package_config_file(
+    cmake/multi_agent_vector_fields-config.cmake
+    "${PROJECT_BINARY_DIR}/multi_agent_vector_fields-config.cmake"
+    INSTALL_DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/"
 )
 
-find_package(Eigen3 REQUIRED)
-find_package(yaml-cpp REQUIRED)
-
-
-add_message_files(
-  FILES
-  Position.msg
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake"
+  VERSION ${${PROJECT_NAME}_VERSION}
+  COMPATIBILITY AnyNewerVersion
 )
 
-add_service_files(
-  FILES
-  JointMotion.srv
+configure_file(cmake/${PROJECT_NAME}-packages.cmake "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-packages.cmake")
+
+install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}-config-targets
+  LIBRARY DESTINATION lib
+  ARCHIVE DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION ${${PROJECT_NAME}_PREFIX_INCLUDE}/${PROJECT_NAME}
 )
 
-generate_messages(DEPENDENCIES std_msgs)
-
-
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES multi_agent_vector_fields
-  CATKIN_DEPENDS
-    geometry_msgs
-    message_runtime
-    roscpp
-    std_msgs
-    tf2_geometry_msgs
-    tf2_ros
-    visualization_msgs
+install(
+  FILES 
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake" 
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-packages.cmake"
+  DESTINATION 
+    ${${PROJECT_NAME}_PREFIX_PACKAGE}
+  COMPONENT 
+    Devel
 )
 
-
-include_directories(
-  include
-  ${catkin_INCLUDE_DIRS}
-  ${EIGEN3_INCLUDE_DIRS}
+export(EXPORT ${PROJECT_NAME}-config-targets
+  FILE "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-targets.cmake"
+  NAMESPACE ${PROJECT_NAME}::
 )
 
-add_library(multi_agent_vector_fields
-  src/cf_manager.cpp
-  src/cf_agent.cpp
+install(EXPORT ${PROJECT_NAME}-config-targets
+  FILE ${PROJECT_NAME}-config-targets.cmake
+  NAMESPACE ${PROJECT_NAME}::
+  DESTINATION ${${PROJECT_NAME}_PREFIX_PACKAGE}
 )
 
-target_link_libraries(multi_agent_vector_fields
-  yaml-cpp
-  ${catkin_LIBRARIES}
-)
-
-
-add_executable(main_node src/main.cpp)
-
-
-target_link_libraries(main_node
-  multi_agent_vector_fields
-  yaml-cpp
-  ${catkin_LIBRARIES}
-)
-
-
-install(TARGETS multi_agent_vector_fields main_node
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
-
-
-install(DIRECTORY launch config
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-)
-
+export(PACKAGE multi_agent_vector_fields)
