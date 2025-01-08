@@ -11,11 +11,10 @@ namespace ghostplanner::cfplanner
     class RealCfAgent : public CfAgent
     {
       public:
-        RealCfAgent(const int id, const Eigen::Vector3d agent_pos, const Eigen::Vector3d goal_pos, const double detect_shell_rad,
-                    const double agent_mass, const double radius, const double velocity_max, const double approach_dist, const int num_obstacles,
-                    Eigen::Quaterniond current_orientation_, Eigen::Quaterniond goal_orientation_)
-          : CfAgent(id, agent_pos, goal_pos, detect_shell_rad, agent_mass, radius, velocity_max, approach_dist, num_obstacles,
-                    std::vector<Obstacle>(), current_orientation_, goal_orientation_) {};
+        RealCfAgent(const sackmesser::Interface::Ptr &interface, const std::string &name, const int id, const Eigen::Vector3d agent_pos,
+                    const Eigen::Vector3d goal_pos, const int num_obstacles, const std::vector<Obstacle> obstacles,
+                    const Eigen::Quaterniond &initial_orientation, const Eigen::Quaterniond &goal_orientation)
+          : CfAgent(interface, name, id, agent_pos, goal_pos, num_obstacles, obstacles, initial_orientation, goal_orientation) {};
 
         RealCfAgent() = default;
 
@@ -26,10 +25,9 @@ namespace ghostplanner::cfplanner
         Eigen::Vector3d calculateRotationVector(const Eigen::Vector3d agent_pos, const Eigen::Vector3d goal_pos,
                                                 const std::vector<Obstacle> &obstacles, const int obstacle_id, const CfAgent &agent) const;
 
-        void circForce(const std::vector<Obstacle> &obstacles, const double k_circ, const CfAgent &agent);
+        void circForce(const std::vector<Obstacle> &obstacles, const CfAgent &agent);
 
         void cfPlanner(const std::vector<Eigen::Vector3d> &manip_map, const std::vector<Obstacle> &obstacles, const CfAgent &agent,
-                       const double k_attr, const double k_circ, const double k_repel, const double k_damp, const double k_manip,
                        const double delta_t, const int steps = 1);
 
         void setPosition(Eigen::Vector3d position) override;

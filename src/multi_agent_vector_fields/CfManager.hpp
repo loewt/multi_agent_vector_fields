@@ -9,6 +9,7 @@
 #include <multi_agent_vector_fields/CfAgent.hpp>
 #include <multi_agent_vector_fields/Obstacle.hpp>
 #include <multi_agent_vector_fields/RealCfAgent.hpp>
+#include <sackmesser/Interface.hpp>
 #include <thread>
 #include <vector>
 
@@ -18,6 +19,14 @@ namespace ghostplanner
     {
         class CfManager
         {
+          private:
+            struct Configuration : public sackmesser::Configuration
+            {
+                bool load(const std::string &ns, const std::shared_ptr<sackmesser::Configurations> &server);
+
+                double approach_distance;
+            } config_;
+
             RealCfAgent real_ee_agent_;
 
             std::shared_ptr<CfAgent> best_agent_;
@@ -25,18 +34,6 @@ namespace ghostplanner
             std::vector<std::shared_ptr<CfAgent>> ee_agents_;
 
             std::vector<std::shared_ptr<CfAgent>> force_agents_;
-
-            std::vector<double> k_a_ee_;
-
-            std::vector<double> k_c_ee_;
-
-            std::vector<double> k_r_ee_;
-
-            std::vector<double> k_d_ee_;
-
-            std::vector<double> k_manip_;
-
-            std::vector<double> k_r_force_;
 
             std::vector<Eigen::Vector3d> manip_map_;
 
@@ -48,15 +45,11 @@ namespace ghostplanner
 
             std::vector<std::thread> prediction_threads_;
 
-            double approach_dist_;
-
           public:
-            CfManager(const Eigen::Vector3d agent_pos, const Eigen::Vector3d goal_pos, const double delta_t, const std::vector<Obstacle> &obstacles,
-                      const std::vector<double> &k_a_ee, const std::vector<double> &k_c_ee, const std::vector<double> &k_r_ee,
-                      const std::vector<double> &k_d_ee, const std::vector<double> &k_manip, const std::vector<double> &k_r_force,
-                      const Eigen::Quaterniond &start_orientation, const Eigen::Quaterniond &goal_orientation, const double velocity_max = 0.5,
-                      const double approach_dist = 0.25, const double detect_shell_rad = 0.8, const size_t max_prediction_steps = 1500,
-                      const size_t prediction_freq_multiple = 1, const double agent_mass = 1.0, const double radius = 0.01);
+            CfManager(const sackmesser::Interface::Ptr &interface, const std::string &name, const Eigen::Vector3d agent_pos,
+                      const Eigen::Vector3d goal_pos, const double delta_t, const std::vector<Obstacle> &obstacles,
+                      const Eigen::Quaterniond &start_orientation, const Eigen::Quaterniond &goal_orientation,
+                      const size_t max_prediction_steps = 1500, const size_t prediction_freq_multiple = 1);
 
             CfManager() = default;
 
@@ -107,14 +100,6 @@ namespace ghostplanner
             double getDistFromGoal() const;
 
             std::vector<gafro::Motor<double>> getPlannedTrajectory() const;
-
-            void init(const Eigen::Vector3d goal_pos, const double delta_t, const std::vector<Obstacle> &obstacles, const std::vector<double> &k_a_ee,
-                      const std::vector<double> &k_c_ee, const std::vector<double> &k_r_ee, const std::vector<double> &k_d_ee,
-                      const std::vector<double> &k_manip, const std::vector<double> &k_r_force, const double velocity_max = 0.5,
-                      const double approach_dist = 0.25, const double detect_shell_rad = 0.8,
-                      const Eigen::Quaterniond &start_orientation = Eigen::Quaterniond::Identity(),
-                      const Eigen::Quaterniond &goal_orientation = Eigen::Quaterniond::Identity(), const size_t max_prediction_steps = 1500,
-                      const size_t prediction_freq_multiple = 1, const double agent_mass = 1.0, const double radius = 0.05);
 
             std::vector<Eigen::Vector3d> getLinkForce(const std::vector<Eigen::Vector3d> &link_positions, const std::vector<Obstacle> &obstacles);
 

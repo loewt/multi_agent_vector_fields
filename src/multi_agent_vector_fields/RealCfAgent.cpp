@@ -7,7 +7,7 @@ namespace ghostplanner::cfplanner
         trajectory_.push_back(gafro::Translator<double>::exp(position));
     }
 
-    void RealCfAgent::circForce(const std::vector<Obstacle> &obstacles, const double k_circ, const CfAgent &agent)
+    void RealCfAgent::circForce(const std::vector<Obstacle> &obstacles, const CfAgent &agent)
     {
         Eigen::Vector3d goal_vec{ goal_pose_.getTranslator().toTranslationVector() - getLatestPosition() };
         for (int i = 0; i < obstacles.size() - 1; i++)
@@ -18,11 +18,11 @@ namespace ghostplanner::cfplanner
             {
                 continue;
             }
-            double dist_obs{ (getLatestPosition() - obstacles.at(i).getPosition()).norm() - (rad_ + obstacles.at(i).getRadius()) };
+            double dist_obs{ (getLatestPosition() - obstacles.at(i).getPosition()).norm() - (config_.radius + obstacles.at(i).getRadius()) };
             dist_obs = std::max(dist_obs, 1e-5);
             Eigen::Vector3d curr_force{ 0.0, 0.0, 0.0 };
             Eigen::Vector3d current;
-            if (dist_obs < detect_shell_rad_)
+            if (dist_obs < config_.detect_shell_radius)
             {
                 if (!known_obstacles_.at(i))
                 {
@@ -34,7 +34,7 @@ namespace ghostplanner::cfplanner
                 {
                     Eigen::Vector3d normalized_vel = rel_vel / vel_norm;
                     current = currentVector(getLatestPosition(), rel_vel, getGoalPosition(), obstacles, i, field_rotation_vecs_, agent);
-                    curr_force = (k_circ / pow(dist_obs, 2)) * normalized_vel.cross(current.cross(normalized_vel));
+                    curr_force = (config_.k_circular_force / pow(dist_obs, 2)) * normalized_vel.cross(current.cross(normalized_vel));
                 }
             }
             force_ += curr_force;
@@ -42,23 +42,23 @@ namespace ghostplanner::cfplanner
     }
 
     void RealCfAgent::cfPlanner(const std::vector<Eigen::Vector3d> &manip_map, const std::vector<Obstacle> &obstacles, const CfAgent &agent,
-                                const double k_attr, const double k_circ, const double k_repel, const double k_damp, const double k_manip,
                                 const double delta_t, const int steps)
     {
         for (size_t i = 0; i < steps; ++i)
         {
             resetForce();
             double k_goal_scale = 1.0;
-            if (!(getDistFromGoal() < approach_dist_ || (vel_.norm() < 0.5 * vel_max_ && (getLatestPosition() - init_pos_).norm() < 0.2)))
+            if (!(getDistFromGoal() < config_.approach_distance ||
+                  (vel_.norm() < 0.5 * config_.max_velocity && (getLatestPosition() - init_pos_).norm() < 0.2)))
             {
-                circForce(obstacles, k_circ, agent);
+                circForce(obstacles, agent);
                 if (force_.norm() > 1e-5)
                 {
                     k_goal_scale = attractorForceScaling(obstacles);
                 }
             }
-            repelForce(obstacles, k_repel);
-            attractorForce(k_attr, k_damp, k_goal_scale);
+            repelForce(obstacles);
+            attractorForce(k_goal_scale);
 
             updatePositionAndVelocity(delta_t);
         }

@@ -1,5 +1,6 @@
 find_package(Eigen3 REQUIRED)
 find_package(gafro REQUIRED)
+find_package(sackmesser REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
     CfAgent.cpp
@@ -56,6 +57,7 @@ target_link_libraries(${PROJECT_NAME}
 	PUBLIC
    Eigen3::Eigen
    gafro::gafro
+   sackmesser::sackmesser
 )
 
 install(
