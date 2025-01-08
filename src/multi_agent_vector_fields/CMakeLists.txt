@@ -1,4 +1,5 @@
 find_package(Eigen3 REQUIRED)
+find_package(gafro REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
     CfAgent.cpp
@@ -9,7 +10,7 @@ add_library(${PROJECT_NAME} SHARED
     RandomCfAgent.cpp
     RealCfAgent.cpp
     VelocityHeuristicCfAgent.cpp
-    cf_manager.cpp
+    CfManager.cpp
     Obstacle.cpp
 )
 
@@ -54,6 +55,7 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
 	PUBLIC
    Eigen3::Eigen
+   gafro::gafro
 )
 
 install(
@@ -66,7 +68,7 @@ install(
     RandomCfAgent.hpp
     RealCfAgent.hpp
     VelocityHeuristicCfAgent.hpp
-    cf_manager.h
+    CfManager.hpp
     Obstacle.hpp
 	DESTINATION 
 		${${PROJECT_NAME}_PREFIX_INCLUDE}/${PROJECT_NAME} 

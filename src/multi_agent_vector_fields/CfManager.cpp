@@ -1,10 +1,10 @@
-#include <multi_agent_vector_fields/cf_manager.h>
 #include <omp.h>
 
 #include <cassert>
 #include <iostream>
 #include <limits>
 #include <multi_agent_vector_fields/CfAgent.hpp>
+#include <multi_agent_vector_fields/CfManager.hpp>
 #include <multi_agent_vector_fields/GoalHeuristicCfAgent.hpp>
 #include <multi_agent_vector_fields/GoalObstacleHeuristicCfAgent.hpp>
 #include <multi_agent_vector_fields/HadHeuristicCfAgent.hpp>
@@ -34,7 +34,7 @@ namespace ghostplanner
         {
             init(goal_pos, delta_t, obstacles, k_a_ee, k_c_ee, k_r_ee, k_d_ee, k_manip, k_r_force, velocity_max, approach_dist, detect_shell_rad,
                  start_orientation, goal_orientation);
-        };
+        }
 
         void CfManager::init(const Eigen::Vector3d goal_pos, const double delta_t, const std::vector<Obstacle> &obstacles,
                              const std::vector<double> &k_a_ee, const std::vector<double> &k_c_ee, const std::vector<double> &k_r_ee,
@@ -62,45 +62,46 @@ namespace ghostplanner
             real_ee_agent_ = RealCfAgent(0, init_pos_, goal_pos, detect_shell_rad, agent_mass, radius, velocity_max, approach_dist, obstacle_size,
                                          start_orientation, goal_orientation);
 
-            ee_agents_.push_back(std::make_unique<HadHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad, agent_mass,
+            ee_agents_.push_back(std::make_shared<HadHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad, agent_mass,
                                                                        radius, velocity_max, approach_dist, obstacle_size, obstacles,
                                                                        start_orientation, goal_orientation));
 
             if (k_a_ee.size() > ee_agents_.size())
             {
-                ee_agents_.push_back(std::make_unique<GoalHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad, agent_mass,
+                ee_agents_.push_back(std::make_shared<GoalHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad, agent_mass,
                                                                             radius, velocity_max, approach_dist, obstacle_size, obstacles,
                                                                             start_orientation, goal_orientation));
             }
             if (k_a_ee.size() > ee_agents_.size())
             {
-                ee_agents_.push_back(std::make_unique<ObstacleHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad,
+                ee_agents_.push_back(std::make_shared<ObstacleHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad,
                                                                                 agent_mass, radius, velocity_max, approach_dist, obstacle_size,
                                                                                 obstacles, start_orientation, goal_orientation));
             }
             if (k_a_ee.size() > ee_agents_.size())
             {
-                ee_agents_.push_back(std::make_unique<GoalObstacleHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad,
+                ee_agents_.push_back(std::make_shared<GoalObstacleHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad,
                                                                                     agent_mass, radius, velocity_max, approach_dist, obstacle_size,
                                                                                     obstacles, start_orientation, goal_orientation));
             }
             if (k_a_ee.size() > ee_agents_.size())
             {
-                ee_agents_.push_back(std::make_unique<VelocityHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad,
+                ee_agents_.push_back(std::make_shared<VelocityHeuristicCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad,
                                                                                 agent_mass, radius, velocity_max, approach_dist, obstacle_size,
                                                                                 obstacles, start_orientation, goal_orientation));
             }
             for (size_t i = ee_agents_.size(); i < k_a_ee.size(); ++i)
             {
-                ee_agents_.push_back(std::make_unique<RandomCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad, agent_mass, radius,
+                ee_agents_.push_back(std::make_shared<RandomCfAgent>(ee_agents_.size() + 1, init_pos_, goal_pos, detect_shell_rad, agent_mass, radius,
                                                                      velocity_max, approach_dist, obstacle_size, obstacles, start_orientation,
                                                                      goal_orientation));
             }
 
             Vector3d zeros{ 0.0, 0.0, 0.0 };
+
             for (size_t i = 0; i < k_r_force.size(); ++i)
             {
-                force_agents_.push_back(std::make_unique<GoalHeuristicCfAgent>(force_agents_.size() + ee_agents_.size() + 1, init_pos_, goal_pos,
+                force_agents_.push_back(std::make_shared<GoalHeuristicCfAgent>(force_agents_.size() + ee_agents_.size() + 1, init_pos_, goal_pos,
                                                                                detect_shell_rad, agent_mass, radius, velocity_max, approach_dist,
                                                                                obstacle_size, obstacles, start_orientation, goal_orientation));
             }
@@ -119,6 +120,19 @@ namespace ghostplanner
             // ROS_INFO("k_a_ee.size %lu :", k_a_ee.size());
 
             // ROS_INFO("CfManager initialized with %lu agents:", ee_agents_.size());
+        }
+
+        CfManager::~CfManager()
+        {
+            joinPredictionThreads();
+        }
+
+        void CfManager::startPrediction()
+        {
+            for (auto &ee_agent : ee_agents_)
+            {
+                ee_agent->startPrediction();
+            }
         }
 
         void CfManager::stopPrediction()
@@ -140,7 +154,15 @@ namespace ghostplanner
                     }
                 }
             }
-        };
+        }
+
+        void CfManager::shutdownAllAgents()
+        {
+            for (auto &ee_agent : ee_agents_)
+            {
+                ee_agent->shutdownAgent();
+            }
+        }
 
         void CfManager::joinPredictionThreads()
         {
@@ -184,11 +206,11 @@ namespace ghostplanner
                 forces.push_back(force);
             }
             return forces;
-        };
+        }
 
-        std::vector<std::vector<Eigen::Vector3d>> CfManager::getPredictedPaths()
+        std::vector<std::vector<gafro::Motor<double>>> CfManager::getPredictedPaths()
         {
-            std::vector<std::vector<Eigen::Vector3d>> predicted_paths;
+            std::vector<std::vector<gafro::Motor<double>>> predicted_paths;
             for (size_t i = 0; i < ee_agents_.size(); i++)
             {
                 predicted_paths.push_back(ee_agents_[i]->getPath());
@@ -221,47 +243,10 @@ namespace ghostplanner
             std::vector<bool> success;
             for (size_t i = 0; i < ee_agents_.size(); i++)
             {
-                success.push_back(ee_agents_[i]->getReachedGoal());
+                success.push_back(ee_agents_[i]->hasReachedGoal());
             }
             return success;
         }
-
-        void CfManager::setRealEEAgentPosition(const Eigen::Vector3d &position)
-        {
-            real_ee_agent_.setPosition(position);
-        };
-
-        void CfManager::setEEAgentPositions(const Eigen::Vector3d &position)
-        {
-            for (auto &agent : ee_agents_)
-            {
-                agent->setPosition(position);
-            }
-        };
-
-        void CfManager::setInitialPosition(const Eigen::Vector3d &position)
-        {
-            init_pos_ = position;
-            setInitialEEPositions(position);
-        };
-
-        void CfManager::setInitialEEPositions(const Eigen::Vector3d &position)
-        {
-            real_ee_agent_.setInitalPosition(position);
-            for (auto &agent : ee_agents_)
-            {
-                agent->setInitalPosition(position);
-            }
-        };
-
-        void CfManager::setEEAgentPosAndVels(const Eigen::Vector3d &position, const Eigen::Vector3d &velocity)
-        {
-            for (auto &agent : ee_agents_)
-            {
-                agent->setPosition(position);
-                agent->setVelocity(velocity);
-            }
-        };
 
         void CfManager::resetEEAgents(const Eigen::Vector3d &position, const Eigen::Vector3d &velocity, const std::vector<Obstacle> &obstacles)
         {
@@ -272,13 +257,28 @@ namespace ghostplanner
                 agent->setObstacles(obstacles, real_ee_agent_.getKnownObstacles());
                 agent->resetMinObsDist();
             }
-        };
+        }
+
+        void CfManager::setInitialPosition(const Eigen::Vector3d &position)
+        {
+            init_pos_ = position;
+            setInitialEEPositions(position);
+        }
+
+        void CfManager::setInitialEEPositions(const Eigen::Vector3d &position)
+        {
+            real_ee_agent_.setInitalPosition(position);
+            for (auto &agent : ee_agents_)
+            {
+                agent->setInitalPosition(position);
+            }
+        }
 
         void CfManager::moveRealEEAgent(const vector<Obstacle> &obstacles, const double delta_t, const int steps, const int agent_id)
         {
             real_ee_agent_.cfPlanner(manip_map_, obstacles, *best_agent_, k_a_ee_[agent_id], k_c_ee_[agent_id], k_r_ee_[agent_id], k_d_ee_[agent_id],
                                      k_manip_[agent_id], delta_t, steps);
-        };
+        }
 
         void CfManager::moveAgent(const vector<Obstacle> &obstacles, const double delta_t, const int steps, const int id)
         {
@@ -286,7 +286,7 @@ namespace ghostplanner
             {
                 ee_agents_[id]->cfPlanner(manip_map_, obstacles, k_a_ee_[id], k_c_ee_[id], k_r_ee_[id], k_d_ee_[id], k_manip_[id], delta_t, steps);
             }
-        };
+        }
 
         void CfManager::moveAgents(const vector<Obstacle> &obstacles, const double delta_t, const int steps)
         {
@@ -298,7 +298,7 @@ namespace ghostplanner
 
                 //    agents[i]->cfPlanner({},     obstacles,  5.0,            1.0,      10.0,        1.0,         0.0,     0.1,       1);
             }
-        };
+        }
 
         void CfManager::moveAgentsPar(const vector<Obstacle> &obstacles, const double delta_t, const int steps)
         {
@@ -308,7 +308,7 @@ namespace ghostplanner
                 int idx = it - ee_agents_.begin();
                 (*it)->cfPlanner(manip_map_, obstacles, k_a_ee_[idx], k_c_ee_[idx], k_r_ee_[idx], k_d_ee_[idx], k_manip_[idx], delta_t, steps);
             }
-        };
+        }
 
         Eigen::Vector3d CfManager::getRealEEAgentPosition() const
         {
@@ -323,8 +323,10 @@ namespace ghostplanner
             for (auto &&agent : ee_agents_)
             {
                 double cost = 0;
-                for (auto &&position : agent->getPath())
+                for (const gafro::Motor<double> &pose : agent->getPath())
                 {
+                    Eigen::Vector3d position = pose.getTranslator().toTranslationVector();
+
                     if (position.x() > des_ws_limits(0))
                     {
                         cost += std::pow(std::abs(position.x() - des_ws_limits(0)) * k_workspace, 2);
@@ -377,7 +379,7 @@ namespace ghostplanner
             {
                 if (costs[min_cost_idx] < 0.9 * costs[best_agent_->getAgentID() - 1])
                 {
-                    best_agent_ = ee_agents_[min_cost_idx]->makeCopy();
+                    best_agent_ = ee_agents_[min_cost_idx];
                 }
                 else
                 {
@@ -386,11 +388,70 @@ namespace ghostplanner
             }
             else
             {
-                best_agent_ = ee_agents_[min_cost_idx]->makeCopy();
+                best_agent_ = ee_agents_[min_cost_idx];
             }
 
             return min_cost_idx;
-        };
+        }
+
+        int CfManager::getBestAgentType()
+        {
+            return best_agent_->getAgentType();
+        }
+
+        Eigen::Vector3d CfManager::getNextPosition()
+        {
+            return real_ee_agent_.getLatestPosition();
+        }
+
+        Eigen::Vector3d CfManager::getInitialPosition()
+        {
+            return init_pos_;
+        }
+
+        Eigen::Vector3d CfManager::getNextVelocity()
+        {
+            return real_ee_agent_.getVelocity();
+        }
+
+        Eigen::Vector3d CfManager::getNextAngularVelocity() const
+        {
+            return real_ee_agent_.getAngularVelocity();
+        }
+        Eigen::Vector3d CfManager::getEEForce()
+        {
+            return real_ee_agent_.getForce();
+        }
+
+        Eigen::Vector3d CfManager::getGoalPosition() const
+        {
+            return goal_pos_;
+        }
+
+        int CfManager::getNumPredictionSteps(int agent_id)
+        {
+            return ee_agents_[agent_id]->getNumPredictionSteps();
+        }
+
+        int CfManager::getRealNumPredictionSteps()
+        {
+            return real_ee_agent_.getNumPredictionSteps();
+        }
+
+        double CfManager::getDistFromGoal() const
+        {
+            return (goal_pos_ - real_ee_agent_.getLatestPosition()).norm();
+        }
+
+        std::vector<gafro::Motor<double>> CfManager::getPlannedTrajectory() const
+        {
+            return real_ee_agent_.getPath();
+        }
+
+        RealCfAgent &CfManager::getRealEEAgent()
+        {
+            return real_ee_agent_;
+        }
 
     }  // namespace cfplanner
 }  // namespace ghostplanner

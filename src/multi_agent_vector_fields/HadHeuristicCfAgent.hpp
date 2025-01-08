@@ -26,10 +26,6 @@ namespace ghostplanner::cfplanner
         {
             return HAD_HEURISTIC;
         };
-        std::unique_ptr<CfAgent> makeCopy() override
-        {
-            return std::unique_ptr<CfAgent>(new HadHeuristicCfAgent(*this));
-        };
     };
 
 }  // namespace ghostplanner::cfplanner

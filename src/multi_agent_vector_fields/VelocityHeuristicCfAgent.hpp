@@ -28,10 +28,6 @@ namespace ghostplanner::cfplanner
         {
             return VEL_HEURISTIC;
         };
-        std::unique_ptr<CfAgent> makeCopy() override
-        {
-            return std::unique_ptr<CfAgent>(new VelocityHeuristicCfAgent(*this));
-        };
     };
 
 }  // namespace ghostplanner::cfplanner

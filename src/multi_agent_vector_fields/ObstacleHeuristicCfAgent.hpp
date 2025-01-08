@@ -29,10 +29,6 @@ namespace ghostplanner::cfplanner
         {
             return OBSTACLE_HEURISTIC;
         };
-        std::unique_ptr<CfAgent> makeCopy() override
-        {
-            return std::unique_ptr<CfAgent>(new ObstacleHeuristicCfAgent(*this));
-        };
     };
 
 }  // namespace ghostplanner::cfplanner

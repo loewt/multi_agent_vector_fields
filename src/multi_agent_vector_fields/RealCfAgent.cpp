@@ -4,12 +4,12 @@ namespace ghostplanner::cfplanner
 {
     void RealCfAgent::setPosition(Eigen::Vector3d position)
     {
-        pos_.push_back(position);
+        trajectory_.push_back(gafro::Translator<double>::exp(position));
     }
 
     void RealCfAgent::circForce(const std::vector<Obstacle> &obstacles, const double k_circ, const CfAgent &agent)
     {
-        Eigen::Vector3d goal_vec{ g_pos_ - getLatestPosition() };
+        Eigen::Vector3d goal_vec{ goal_pose_.getTranslator().toTranslationVector() - getLatestPosition() };
         for (int i = 0; i < obstacles.size() - 1; i++)
         {
             Eigen::Vector3d robot_obstacle_vec{ obstacles.at(i).getPosition() - getLatestPosition() };

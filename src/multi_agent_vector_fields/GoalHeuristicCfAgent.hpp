@@ -26,11 +26,7 @@ namespace ghostplanner::cfplanner
         Type getAgentType() override
         {
             return GOAL_HEURISTIC;
-        };
-        std::unique_ptr<CfAgent> makeCopy() override
-        {
-            return std::unique_ptr<CfAgent>(new GoalHeuristicCfAgent(*this));
-        };
+        }
     };
 
 }  // namespace ghostplanner::cfplanner

@@ -43,10 +43,6 @@ namespace ghostplanner::cfplanner
         {
             return RANDOM_AGENT;
         };
-        std::unique_ptr<CfAgent> makeCopy() override
-        {
-            return std::unique_ptr<CfAgent>(new RandomCfAgent(*this));
-        };
     };
 
 }  // namespace ghostplanner::cfplanner

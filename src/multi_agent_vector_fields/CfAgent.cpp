@@ -3,30 +3,63 @@
 
 namespace ghostplanner::cfplanner
 {
+    CfAgent::CfAgent(const int id, const Eigen::Vector3d agent_pos, const Eigen::Vector3d goal_pos, const double detect_shell_rad,
+                     const double agent_mass, const double radius, const double velocity_max, const double approach_dist, const int num_obstacles,
+                     const std::vector<Obstacle> obstacles, const Eigen::Quaterniond &initial_orientation, const Eigen::Quaterniond &goal_orientation)
+      : current_pose_(gafro::Rotor<double>::fromQuaternion(initial_orientation)),  //
+        goal_pose_(goal_pos, goal_orientation),                                    //
+        id_{ id },                                                                 //
+        trajectory_{ gafro::Translator<double>::exp(agent_pos) },                  //
+        vel_{ 0.01, 0.0, 0.0 },                                                    //
+        acc_{ 0.0, 0.0, 0.0 },                                                     //
+        init_pos_{ 0.0, 0.0, 0.0 },                                                //
+        detect_shell_rad_{ detect_shell_rad },                                     //
+        min_obs_dist_{ detect_shell_rad },                                         //
+        force_{ 0.0, 0.0, 0.0 },                                                   //
+        angular_force_{ 0.0, 0.0, 0.0 },                                           //
+        mass_{ agent_mass },                                                       //
+        rad_{ radius },                                                            //
+        vel_max_{ velocity_max },                                                  //
+        approach_dist_{ approach_dist },                                           //
+        run_prediction_{ false },                                                  //
+        running_{ false },                                                         //
+        finished_{ false },                                                        //
+        obstacles_{ obstacles },                                                   //
+        angular_velocity_{ Eigen::Vector3d::Zero() }                               // 初始化角速度
+    {
+        Eigen::Vector3d default_rot_vec{ 0.0, 0.0, 1.0 };
+        for (size_t i = 0; i < num_obstacles; i++)
+        {
+            field_rotation_vecs_.push_back(default_rot_vec);
+            known_obstacles_.push_back(false);
+        }
+    };
+
     Eigen::Vector3d CfAgent::getFirstPosition() const
     {
-        assert(pos_.size() != 0);
-        return pos_[0];
+        assert(trajectory_.size() != 0);
+        return trajectory_[0].getTranslator().toTranslationVector();
     }
 
     Eigen::Vector3d CfAgent::getPosition(int id) const
     {
-        assert(pos_.size() >= id);
-        return pos_[id];
+        assert(trajectory_.size() >= id);
+        return trajectory_[id].getTranslator().toTranslationVector();
     }
 
     Eigen::Vector3d CfAgent::getLatestPosition() const
     {
-        assert(pos_.size() != 0);
-        return pos_.back();
+        assert(trajectory_.size() != 0);
+        return trajectory_.back().getTranslator().toTranslationVector();
     }
 
     double CfAgent::getPathLength() const
     {
         double path_length = 0;
-        for (size_t i = 0; i < pos_.size() - 1; i++)
+        for (size_t i = 0; i < trajectory_.size() - 1; i++)
         {
-            path_length += (pos_.at(i + 1) - pos_.at(i)).norm();
+            path_length +=
+              (trajectory_.at(i + 1).getTranslator().toTranslationVector() - trajectory_.at(i).getTranslator().toTranslationVector()).norm();
         }
         return path_length;
     }
@@ -39,15 +72,15 @@ namespace ghostplanner::cfplanner
 
     void CfAgent::setPosition(Eigen::Vector3d position)
     {
-        pos_.clear();
-        pos_.push_back(position);
+        trajectory_.clear();
+        trajectory_.push_back(gafro::Translator<double>::exp(position));
     }
 
     void CfAgent::reset()
     {
         Eigen::Vector3d one_step_pos{ getFirstPosition() };
-        pos_.clear();
-        pos_.push_back(one_step_pos);
+        trajectory_.clear();
+        trajectory_.push_back(gafro::Translator<double>::exp(one_step_pos));
     }
 
     void CfAgent::setVelocity(const Eigen::Vector3d &velocity)
@@ -75,7 +108,7 @@ namespace ghostplanner::cfplanner
 
     void CfAgent::circForce(const std::vector<Obstacle> &obstacles, const double k_circ)
     {
-        Eigen::Vector3d goal_vec{ g_pos_ - getLatestPosition() };
+        Eigen::Vector3d goal_vec{ goal_pose_.getTranslator().toTranslationVector() - getLatestPosition() };
         for (int i = 0; i < obstacles.size() - 1; i++)
         {
             Eigen::Vector3d robot_obstacle_vec{ obstacles.at(i).getPosition() - getLatestPosition() };
@@ -127,7 +160,7 @@ namespace ghostplanner::cfplanner
 
     void CfAgent::repelForce(const std::vector<Obstacle> &obstacles, const double k_repel)
     {
-        Eigen::Vector3d goal_vec{ g_pos_ - getLatestPosition() };
+        Eigen::Vector3d goal_vec{ goal_pose_.getTranslator().toTranslationVector() - getLatestPosition() };
 
         Eigen::Vector3d total_repel_force{ 0.0, 0.0, 0.0 };
         Eigen::Vector3d robot_obstacle_vec{ obstacles.back().getPosition() - getLatestPosition() };
@@ -153,28 +186,22 @@ namespace ghostplanner::cfplanner
             return;
         }
         // --- rotational part ---
-        Eigen::Vector3d goal_vec{ g_pos_ - getLatestPosition() };
+        Eigen::Vector3d goal_vec{ goal_pose_.getTranslator().toTranslationVector() - getLatestPosition() };
         Eigen::Vector3d vel_des = k_attr / k_damp * goal_vec;
         double scale_lim = std::min(1.0, vel_max_ / vel_des.norm());
         vel_des *= scale_lim;
         force_ += k_goal_scale * k_damp * (vel_des - vel_);
 
         // --- rotational part ---
-        Eigen::Quaterniond error_quaternion = goal_orientation_ * current_orientation_.conjugate();
+        Eigen::Quaterniond error_quaternion = goal_pose_.getRotor().quaternion() * current_pose_.getRotor().quaternion().conjugate();
         Eigen::Vector3d error_vector = error_quaternion.vec();  //
-        // ROS_INFO("error_vector: x=%.2f, y=%.2f, z=%.2f", error_vector.x(), error_vector.y(), error_vector.z());
 
         Eigen::Vector3d desired_angular_velocity = (k_attr / k_damp) * error_vector;
         double max_angular_velocity = 1.0;
         double scaling_factor = std::min(1.0, max_angular_velocity / desired_angular_velocity.norm());
         desired_angular_velocity *= scaling_factor;  // one by one like the paper
-        // ROS_INFO("desired_angular_velocity: x=%.2f, y=%.2f, z=%.2f", desired_angular_velocity.x(), desired_angular_velocity.y(),
-        // desired_angular_velocity.z()); ROS_INFO("angular_velocity_: x=%.2f, y=%.2f, z=%.2f", angular_velocity_.x(), angular_velocity_.y(),
-        // angular_velocity_.z());
 
         angular_force_ = k_damp * (desired_angular_velocity - angular_velocity_);
-        // ROS_INFO("angular_force_: x=%.2f, y=%.2f, z=%.2f, magnitude=%.2f", angular_force_.x(), angular_force_.y(), angular_force_.z(),
-        // angular_force_.norm());
     }
 
     double CfAgent::attractorForceScaling(const std::vector<Obstacle> &obstacles)
@@ -199,7 +226,7 @@ namespace ghostplanner::cfplanner
         {
             return 1;
         }
-        Eigen::Vector3d goal_vec{ g_pos_ - getLatestPosition() };
+        Eigen::Vector3d goal_vec{ goal_pose_.getTranslator().toTranslationVector() - getLatestPosition() };
         if (goal_vec.dot(vel_) <= 0.0 && vel_.norm() < vel_max_ - 0.1 * vel_max_ && goal_vec.norm() > 0.15)
         {
             return 0.0;
@@ -234,7 +261,7 @@ namespace ghostplanner::cfplanner
         {
             vel_ *= vel_max_ / vel_norm;
         }
-        pos_.push_back(new_pos);
+        trajectory_.push_back(gafro::Translator<double>::exp(new_pos));
 
         // Angular part (update orientation)
 
@@ -250,7 +277,8 @@ namespace ghostplanner::cfplanner
         {
             Eigen::Vector3d axis = angular_velocity_.normalized();
             delta_q = Eigen::AngleAxisd(angle, axis);
-            current_orientation_ = (current_orientation_ * delta_q).normalized();
+            current_pose_ =
+              gafro::Motor<double>(gafro::Rotor<double>::fromQuaternion((current_pose_.getRotor().quaternion() * delta_q).normalized()));
 
             // ROS_INFO("Current orientation: [w=%.2f, x=%.2f, y=%.2f, z=%.2f]",
             //     current_orientation_.w(), current_orientation_.x(),
@@ -268,11 +296,14 @@ namespace ghostplanner::cfplanner
         // (0, w_x, w_y, w_z)
         Eigen::Quaterniond omega(0, angular_velocity_.x(), angular_velocity_.y(), angular_velocity_.z());
 
+        Eigen::Quaterniond current_orientation = current_pose_.getRotor().quaternion();
         // 0.5 * delta_t * (current_orientation_ * omega)
-        Eigen::Quaterniond delta_q = Eigen::Quaterniond(0.5 * delta_t * (current_orientation_ * omega).coeffs());
+        Eigen::Quaterniond delta_q = Eigen::Quaterniond(0.5 * delta_t * (current_pose_.getRotor().quaternion() * omega).coeffs());
 
-        current_orientation_.coeffs() += delta_q.coeffs();
-        current_orientation_.normalize();  // kkep that
+        current_orientation.coeffs() += delta_q.coeffs();
+        current_orientation.normalize();  // kkep that
+
+        current_pose_ = gafro::Motor<double>(gafro::Rotor<double>::fromQuaternion(current_orientation));
     }
 
     void CfAgent::predictObstacles(const double delta_t)
@@ -314,7 +345,7 @@ namespace ghostplanner::cfplanner
         while (!finished_)
         {
             std::chrono::steady_clock::time_point begin_prediction = std::chrono::steady_clock::now();
-            while (run_prediction_ && getDistFromGoal() > 0.1 && pos_.size() < max_prediction_steps)
+            while (run_prediction_ && getDistFromGoal() > 0.1 && trajectory_.size() < max_prediction_steps)
             {
                 running_ = true;
                 resetForce();
@@ -336,14 +367,6 @@ namespace ghostplanner::cfplanner
             if (running_)
             {
                 prediction_time_ = (end_prediction - begin_prediction).count();
-                if (getDistFromGoal() < 0.100001)
-                {
-                    reached_goal_ = true;
-                }
-                else
-                {
-                    reached_goal_ = false;
-                }
             }
 
             running_ = false;
@@ -361,6 +384,115 @@ namespace ghostplanner::cfplanner
                                                      const std::vector<Obstacle> &obstacles, const int obstacle_id) const
     {
         return Eigen::Vector3d::Zero();
+    }
+
+    Eigen::Vector3d CfAgent::getInitialPosition() const
+    {
+        return init_pos_;
+    }
+
+    std::vector<gafro::Motor<double>> CfAgent::getPath() const
+    {
+        return trajectory_;
+    }
+
+    Eigen::Vector3d CfAgent::getGoalPosition() const
+    {
+        return goal_pose_.getTranslator().toTranslationVector();
+    }
+
+    void CfAgent::setOrientation(const Eigen::Quaterniond &orientation)
+    {
+        current_pose_ = gafro::Motor<double>(gafro::Rotor<double>::fromQuaternion(orientation));
+    }
+
+    void CfAgent::resetForce()
+    {
+        force_ << 0.0, 0.0, 0.0;
+    }
+
+    Eigen::Vector3d CfAgent::getForce()
+    {
+        return force_;
+    }
+
+    Eigen::Vector3d CfAgent::getVelocity()
+    {
+        return vel_;
+    }
+
+    Eigen::Vector3d CfAgent::getAngularVelocity() const
+    {
+        return angular_velocity_;
+    }
+    double CfAgent::getDistFromGoal() const
+    {
+        return (goal_pose_.getTranslator().toTranslationVector() - this->getLatestPosition()).norm();
+    }
+
+    int CfAgent::getNumPredictionSteps() const
+    {
+        return trajectory_.size();
+    }
+
+    int CfAgent::getAgentID() const
+    {
+        return id_;
+    }
+
+    bool CfAgent::getRunningStatus()
+    {
+        return running_;
+    }
+
+    double CfAgent::getMinObsDist()
+    {
+        return min_obs_dist_;
+    }
+
+    double CfAgent::getPredictionTime()
+    {
+        return prediction_time_;
+    }
+
+    bool CfAgent::hasReachedGoal()
+    {
+        return getDistFromGoal() < 0.100001;
+    }
+
+    void CfAgent::startPrediction()
+    {
+        run_prediction_ = true;
+    }
+
+    void CfAgent::stopPrediction()
+    {
+        run_prediction_ = false;
+    }
+
+    void CfAgent::shutdownAgent()
+    {
+        finished_ = true;
+    }
+
+    void CfAgent::resetMinObsDist()
+    {
+        min_obs_dist_ = detect_shell_rad_;
+    }
+
+    void CfAgent::setGoal(const Eigen::Vector3d &goal_position)
+    {
+        goal_pose_ = gafro::Translator<double>::exp(goal_position) * goal_pose_.getRotor();
+    }
+
+    bool CfAgent::isRealAgent()
+    {
+        return false;
+    }
+
+    CfAgent::Type CfAgent::getAgentType()
+    {
+        return UNDEFINED;
     }
 
 }  // namespace ghostplanner::cfplanner
